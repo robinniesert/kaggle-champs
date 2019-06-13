@@ -1,0 +1,8 @@
+papers/
+.spyproject/
+__pycache__/
+data/
+tmp/
+nbs/models/
+.ipynb_checkpoints/
+
