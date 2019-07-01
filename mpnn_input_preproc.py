@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import pandas as pd
 import deepchem as dc
@@ -6,7 +7,8 @@ from tqdm import tqdm
 from scipy.spatial.distance import norm
 from glob import glob
 from rdkit import Chem
-
+from rdkit.Chem import ChemicalFeatures
+from rdkit import RDConfig
 from xyz2mol import xyz2mol, read_xyz_file
 
 ## Constants
@@ -15,11 +17,26 @@ TYPES     = np.array(['1JHC', '2JHH', '1JHN', '2JHN', '2JHC', '3JHH', '3JHC',
                       '3JHN'])
 TYPES_MAP = {t: i for i, t in enumerate(TYPES)}
 
+# feature definition file
+FDEF = os.path.join(RDConfig.RDDataDir, 'BaseFeatures.fdef')
+
+# feature collections
+SYMBOLS        = ['H', 'C', 'N', 'O', 'F']
+DEGREES        = [0, 1, 2, 3, 4, 5]
+HYBRIDIZATIONS = [
+    Chem.rdchem.HybridizationType.SP,
+    Chem.rdchem.HybridizationType.SP2,
+    Chem.rdchem.HybridizationType.SP3,
+    Chem.rdchem.HybridizationType.UNSPECIFIED
+]
+
+# feature maps
+ATOMIC_RADIUS = {'H': 0.43, 'C': 0.82, 'N': 0.8, 'O': 0.78, 'F': 0.76} # With fudge factor
+ELECTRO_NEG   = {'H': 2.2, 'C': 2.55, 'N': 3.04, 'O': 3.44, 'F': 3.98}
+
 # feature dimensions
-N_EDGE_FEATURES        = 7
-N_ATOM_FEATURES        = 27
-N_MASTER_EDGE_FEATURES = 9
-N_MASTER_FEATURES      = 8
+N_EDGE_FEATURES        = 8
+N_ATOM_FEATURES        = 21
 MAX_N_ATOMS            = 29
 MAX_N_BONDS            = 58
 N_TYPES                = len(TYPES)
@@ -92,7 +109,7 @@ train_df['type'] = train_df['type'].map(TYPES_MAP)
 test_df['type'] = test_df['type'].map(TYPES_MAP)
 
 ## Create molecules
-def mol_from_xyz(filepath, add_hs=True):
+def mol_from_xyz(filepath, add_hs=True, compute_dist_centre=False):
     """Wrapper function for calling xyz2mol function."""
     charged_fragments = True  # alternatively radicals are made
 
@@ -106,11 +123,14 @@ def mol_from_xyz(filepath, add_hs=True):
                         charged_fragments, quick, check_chiral_stereo=False)
 
     # Compute distance from centroid
-    xyz_coord_array = np.array(xyz_coordinates)
-    centroid = xyz_coord_array.mean(axis=0)
-    dFromCentroid = norm(xyz_coord_array - centroid, axis=1)
+    xyz_arr = np.array(xyz_coordinates)
+    if compute_dist_centre:
+        centroid = xyz_arr.mean(axis=0)
+        dFromCentroid = norm(xyz_arr - centroid, axis=1)
+    else:
+        dFromCentroid = None
 
-    return mol, dMat, dFromCentroid
+    return mol, xyz_arr, dMat, dFromCentroid
 
 # get xyx files and number of molecules
 xyz_filepath_list = list(glob(DATA_PATH+'structures/*.xyz'))
@@ -123,7 +143,7 @@ dist_matrices, mols, mol_ids = {}, {}, {}
 for i in tqdm(range(n_mols)):
     filepath = xyz_filepath_list[i]
     mol_name = filepath.split('/')[-1][:-4]
-    mol, dist_matrix, _ = mol_from_xyz(filepath)
+    mol, _, dist_matrix, _ = mol_from_xyz(filepath)
     mols[mol_name] = mol
     dist_matrices[mol_name] = dist_matrix
     mol_ids[mol_name] = i
@@ -142,6 +162,12 @@ clear_memory(['train_df', 'test_df'])
 
 # functions partially sourced from:
 # https://deepchem.io/docs/_modules/deepchem/feat/graph_features.html
+def one_hot_encoding(x, set):
+    one_hot = [int(x == s) for s in set]
+    if 0:
+        if sum(one_hot)==0: print('one_hot_encoding() return NULL!', x, set)
+    return one_hot
+
 def one_of_k_encoding(x, allowable_set):
     if x not in allowable_set:
         raise Exception(f"input {x} not in allowable set{allowable_set}:")
@@ -161,6 +187,7 @@ def get_edge_features(mol, eucl_dist):
         - is conjugated: bool {0, 1}
         - is in ring: bool {0, 1}
         - euclidean distance: float
+        - normalized eucl distance: float
     """
     n_edges = 2 * mol.GetNumBonds()
     features = np.zeros((n_edges, N_EDGE_FEATURES))
@@ -177,50 +204,57 @@ def get_edge_features(mol, eucl_dist):
         pairs_idx[ix1] = i, j
         pairs_idx[ix2] = j, i
     sorted_idx = pairs_idx[:,0].argsort()
+    dists = features[:, 6]
+    features[:, 7] = (dists - dists.mean()) / dists.std()
     return features[sorted_idx], pairs_idx[sorted_idx]
 
 def get_atom_features(mol):
     """
     Compute the following features for each atom in 'mol':
         - atom type: H, C, N, O, F (one-hot)
-        - degree: 0, 1, 2, 3, 4, 5 (one-hot)
-        - implicit valence: -1, 0, 1, 2, 3, 4 (one-hot)
-        - Hybridization: SP, SP2, SP3, SP3D, SP3D2, UNSPECIFIED (one-hot)
+        - degree: 1, 2, 3, 4, 5 (one-hot)
+        - Hybridization: SP, SP2, SP3, UNSPECIFIED (one-hot)
         - is aromatic: bool {0, 1}
         - formal charge: int
-        - num radical electrons: int
-        - atomic number: int
+        - atomic number: float
+        - atomic radius: float
+        - electro negativity: float
+        - donor: bool {0, 1}
+        - acceptor: bool {0, 1}
     """
     n_atoms = mol.GetNumAtoms()
     features = np.zeros((n_atoms, N_ATOM_FEATURES))
     for a in mol.GetAtoms():
-        a_feats = one_of_k_encoding(a.GetSymbol(), ['H', 'C', 'N', 'O', 'F']) \
-            + one_of_k_encoding(a.GetDegree(), [0, 1, 2, 3, 4, 5]) \
-            + one_of_k_encoding(a.GetImplicitValence(), [-1, 0, 1, 2, 3, 4]) \
-            + one_of_k_encoding_unk(a.GetHybridization(), [
-                Chem.rdchem.HybridizationType.SP,
-                Chem.rdchem.HybridizationType.SP2,
-                Chem.rdchem.HybridizationType.SP3,
-                Chem.rdchem.HybridizationType.SP3D,
-                Chem.rdchem.HybridizationType.SP3D2,
-                Chem.rdchem.HybridizationType.UNSPECIFIED
-            ]) \
-            + [
-                a.GetIsAromatic(), a.GetFormalCharge(),
-                a.GetNumRadicalElectrons(), a.GetAtomicNum()
-            ]
-        features[a.GetIdx(), :] = np.array(a_feats).astype(int)
+        sym = a.GetSymbol()
+        a_feats = one_hot_encoding(sym, SYMBOLS) \
+            + one_hot_encoding(a.GetDegree(), DEGREES) \
+            + one_hot_encoding(a.GetHybridization(), HYBRIDIZATIONS) \
+            + [a.GetIsAromatic(), a.GetFormalCharge(), a.GetAtomicNum() / 10,
+               ATOMIC_RADIUS[sym], ELECTRO_NEG[sym]]
+        features[a.GetIdx(), :len(a_feats)] = np.array(a_feats)
+
+    feat_factory = ChemicalFeatures.BuildFeatureFactory(FDEF)
+    chem_feats = feat_factory.GetFeaturesForMol(mol)
+    for t in range(len(chem_feats)):
+        if chem_feats[t].GetFamily() == 'Donor':
+            for i in chem_feats[t].GetAtomIds():
+                features[i, -2] = 1
+        elif chem_feats[t].GetFamily() == 'Acceptor':
+            for i in chem_feats[t].GetAtomIds():
+                features[i, -1] = 1
+
     return features
 
 # create features
-atomic_features = np.zeros((n_mols, MAX_N_ATOMS, N_ATOM_FEATURES),dtype=np.int16)
+atomic_features = np.zeros((n_mols, MAX_N_ATOMS, N_ATOM_FEATURES))
 edge_features = np.zeros((n_mols, MAX_N_BONDS, N_EDGE_FEATURES))
 pairs_idx = np.zeros((n_mols, MAX_N_BONDS, 2), dtype=np.int16) - 1
 mask = np.zeros((n_mols, MAX_N_ATOMS), dtype=np.int16)
 edge_mask = np.zeros((n_mols, MAX_N_BONDS), dtype=np.int16)
 for i, m_name in enumerate(mols):
     print_progress(i)
-    m_id, mol, dist_matrix = mol_ids[m_name], mols[m_name], dist_matrices[m_name]
+    m_id, mol, = mol_ids[m_name], mols[m_name]
+    xyz, dist_matrix = xyzs[mol_name], dist_matrices[m_name]
     n_atoms, n_edges = mol.GetNumAtoms(), 2 * mol.GetNumBonds()
     atomic_features[m_id, :n_atoms, :] = get_atom_features(mol)
     edge_features[m_id, :n_edges, :], pairs_idx[m_id, :n_edges, :] = \
