@@ -4,6 +4,8 @@ old/
 __pycache__/
 data/
 tmp/
+submissions/
+oofs/
 nbs/models/
 .ipynb_checkpoints/
 
