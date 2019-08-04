@@ -234,14 +234,17 @@ def get_atom_features(mol):
         features[a.GetIdx(), :len(a_feats)] = np.array(a_feats)
 
     feat_factory = ChemicalFeatures.BuildFeatureFactory(FDEF)
-    chem_feats = feat_factory.GetFeaturesForMol(mol)
-    for t in range(len(chem_feats)):
-        if chem_feats[t].GetFamily() == 'Donor':
-            for i in chem_feats[t].GetAtomIds():
-                features[i, -2] = 1
-        elif chem_feats[t].GetFamily() == 'Acceptor':
-            for i in chem_feats[t].GetAtomIds():
-                features[i, -1] = 1
+    try:
+        chem_feats = feat_factory.GetFeaturesForMol(mol)
+        for t in range(len(chem_feats)):
+            if chem_feats[t].GetFamily() == 'Donor':
+                for i in chem_feats[t].GetAtomIds():
+                    features[i, -2] = 1
+            elif chem_feats[t].GetFamily() == 'Acceptor':
+                for i in chem_feats[t].GetAtomIds():
+                    features[i, -1] = 1
+    except RuntimeError as e:
+        print(e)
 
     return features
 
@@ -254,7 +257,7 @@ edge_mask = np.zeros((n_mols, MAX_N_BONDS), dtype=np.int16)
 for i, m_name in enumerate(mols):
     print_progress(i)
     m_id, mol, = mol_ids[m_name], mols[m_name]
-    xyz, dist_matrix = xyzs[mol_name], dist_matrices[m_name]
+    dist_matrix = dist_matrices[m_name]
     n_atoms, n_edges = mol.GetNumAtoms(), 2 * mol.GetNumBonds()
     atomic_features[m_id, :n_atoms, :] = get_atom_features(mol)
     edge_features[m_id, :n_edges, :], pairs_idx[m_id, :n_edges, :] = \

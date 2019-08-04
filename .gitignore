@@ -7,5 +7,7 @@ tmp/
 submissions/
 oofs/
 nbs/models/
+stored_models/
+stored_nbs/
 .ipynb_checkpoints/
 
