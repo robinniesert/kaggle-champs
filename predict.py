@@ -25,8 +25,6 @@ import constants as C
 # parse arguments
 parser = argparse.ArgumentParser()
 parser.add_argument('--batch_size', type=int, default=20)
-parser.add_argument('--epochs', type=int, default=10)
-parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
 parser.add_argument('--d_model', type=int, default=650, 
                     help='dimenstion of node state vector')
 parser.add_argument('--N', type=int, default=10, 
@@ -35,15 +33,13 @@ parser.add_argument('--h', type=int, default=10,
                     help='number of attention heads')
 parser.add_argument('--wd', type=float, default=1e-2, help='weight decay')
 parser.add_argument('--dropout', type=float, default=0.0)
-parser.add_argument('--start_epoch', type=int, default=0)
 parser.add_argument('--fold_id', type=int, default=1)
 parser.add_argument('--version', type=int, default=1)
 parser.add_argument('--local_rank', type=int)
 args = parser.parse_args()
 
 
-# check if distributed training is possible and set model description 
-distributed_train = torch.cuda.device_count() > 1
+# set model description 
 model_str = f'mol_transformer_v{args.version}_fold{args.fold_id}'
 
 
@@ -150,13 +146,7 @@ model = Transformer(
 )
 
 
-# initialize distributed
-if distributed_train:
-    torch.cuda.set_device(args.local_rank)
-    torch.distributed.init_process_group(backend='nccl', init_method='env://')
-
-
-# train model
+# create model
 callback_fns = [
     partial(GradientClipping, clip=10), GroupMeanLogMAE,
     partial(SaveModelCallback, every='improvement', mode='min',
@@ -164,12 +154,11 @@ callback_fns = [
 ]
 learn = Learner(db, model, metrics=[rmse, mae], callback_fns=callback_fns, 
                 wd=wd, loss_func=contribs_rmse_loss)
-if args.start_epoch > 0: 
-    learn.load(model_str)
-    torch.cuda.empty_cache()
-if distributed_train: learn = learn.to_distributed(args.local_rank)
+learn.load(model_str)
 
-learn.fit_one_cycle(args.epochs, max_lr=args.lr, start_epoch=args.start_epoch)
+
+# check if validation metrics are correct
+print(learn.validate())
 
 
 # make predictions

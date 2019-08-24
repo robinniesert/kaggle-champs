@@ -1,7 +1,9 @@
 import random
 import copy
 import numpy as np
+import pandas as pd
 import torch
+import constants as C
 
 
 def set_seed(seed=100):
@@ -15,6 +17,17 @@ def set_seed(seed=100):
 
     # numpy RNG
     np.random.seed(seed)
+
+def store_submit(predictions, name, print_head=False):
+    submit = pd.read_csv(C.RAW_DATA_PATH + 'sample_submission.csv') 
+    submit['scalar_coupling_constant'] = predictions
+    submit.to_csv(f'{name}-submission.csv', index=False)
+    if print_head: print(submit.head())
+
+def store_oof(predictions, name, print_head=False):
+    oof = pd.DataFrame(predictions, columns=['scalar_coupling_constants'])
+    oof.to_csv(f'{name}-oof.csv')
+    if print_head: print(oof.head())
 
 def scale_features(df, features, train_mol_ids=None, means=None, stds=None,
                    return_mean_and_std=False):
