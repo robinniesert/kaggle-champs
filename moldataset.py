@@ -1,23 +1,32 @@
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-from utils import get_dist_matrix
 import constants as C
+
 
 def _get_existing_group(gb, i):
     try: group_df = gb.get_group(i)
     except KeyError: group_df = None
     return group_df
 
+
+def get_dist_matrix(struct_df):
+    locs = struct_df[['x','y','z']].values
+    n_atoms = len(locs)
+    loc_tile = np.tile(locs.T, (n_atoms,1,1))
+    dist_mat = np.sqrt(((loc_tile - loc_tile.T)**2).sum(axis=1))
+    return dist_mat
+
+
 class MoleculeDataset(Dataset):
-    def __init__(self, mol_ids, gb_mol_sc, gb_mol_atom, gb_mol_edge, 
+    def __init__(self, mol_ids, gb_mol_sc, gb_mol_atom, gb_mol_bond, 
                  gb_mol_struct, gb_mol_angle_in, gb_mol_angle_out, 
                  gb_mol_graph_dist):
         self.n = len(mol_ids)
         self.mol_ids = mol_ids
         self.gb_mol_sc = gb_mol_sc
         self.gb_mol_atom = gb_mol_atom
-        self.gb_mol_edge = gb_mol_edge
+        self.gb_mol_bond = gb_mol_bond
         self.gb_mol_struct = gb_mol_struct
         self.gb_mol_angle_in = gb_mol_angle_in
         self.gb_mol_angle_out = gb_mol_angle_out
@@ -29,7 +38,7 @@ class MoleculeDataset(Dataset):
     def __getitem__(self, idx):
         return (self.gb_mol_sc.get_group(self.mol_ids[idx]),
                 self.gb_mol_atom.get_group(self.mol_ids[idx]), 
-                self.gb_mol_edge.get_group(self.mol_ids[idx]), 
+                self.gb_mol_bond.get_group(self.mol_ids[idx]), 
                 self.gb_mol_struct.get_group(self.mol_ids[idx]), 
                 self.gb_mol_angle_in.get_group(self.mol_ids[idx]), 
                 _get_existing_group(self.gb_mol_angle_out, self.mol_ids[idx]),
@@ -52,16 +61,16 @@ def collate_parallel_fn(batch, test=False):
     sc_types, sc_vals = [], []
 
     for b in range(batch_size):
-        (sc_df, atom_df, edge_df, struct_df, angle_in_df, angle_out_df, 
+        (sc_df, atom_df, bond_df, struct_df, angle_in_df, angle_out_df, 
          graph_dist_df) = batch[b]
-        n_atoms, n_pairs, n_sc = len(atom_df), len(edge_df), len(sc_df)
+        n_atoms, n_pairs, n_sc = len(atom_df), len(bond_df), len(sc_df)
         n_pad = C.MAX_N_ATOMS - n_atoms
         eucl_dists_ = get_dist_matrix(struct_df)
         eucl_dists_ = np.pad(eucl_dists_, [(0, 0), (0, n_pad)], 'constant', 
                              constant_values=999)
         
         x.append(atom_df[C.ATOM_FEATS].values)
-        bond_x.append(edge_df[C.EDGE_FEATS].values)
+        bond_x.append(bond_df[C.BOND_FEATS].values)
         sc_x.append(sc_df[C.SC_EDGE_FEATS].values)
         sc_m_x.append(sc_df[C.SC_MOL_FEATS].values)
         sc_types.append(sc_df['type'].values)
@@ -80,11 +89,11 @@ def collate_parallel_fn(batch, test=False):
         
         mask.append(np.pad(np.ones(2 * [n_atoms]), [(0, 0), (0, n_pad)], 
                            'constant'))
-        bond_idx.append(edge_df[['idx_0', 'idx_1']].values)
+        bond_idx.append(bond_df[['idx_0', 'idx_1']].values)
         sc_idx.append(sc_df[['atom_index_0', 'atom_index_1']].values)
-        angles_in_idx.append(angle_in_df['p_idx'].values)
+        angles_in_idx.append(angle_in_df['b_idx'].values)
         if angle_out_df is not None: 
-            angles_out_idx.append(angle_out_df['p_idx'].values)
+            angles_out_idx.append(angle_out_df['b_idx'].values)
         else:
             angles_out_idx.append(np.array([0.]))
         

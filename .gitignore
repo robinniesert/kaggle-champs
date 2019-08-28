@@ -1,13 +1,23 @@
-papers/
-old/
+
+
+.git
+.gitignore
+
+.vscode/
 .spyproject/
+.ipynb_checkpoints/
 __pycache__/
+
+proc_data/
 data/
 tmp/
 submissions/
 oofs/
+
 nbs/models/
 stored_models/
 stored_nbs/
-.ipynb_checkpoints/
+
+papers/
+old/
 

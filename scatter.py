@@ -1,6 +1,10 @@
 import torch
 
 def scatter_add(src, idx, num=None, dim=0, out=None):
+    """Adds all elements from 'src' into 'out' at the positions specified by 
+    'idx'. The index 'idx' only has to match the size of 'src' in dimension 
+    'dim'. If 'out' is None it is initialized to zeros of size 'num' along 'dim' 
+    and of equal dimension to 'src' at all other dimensions."""
     if not num: num = idx.max().item() + 1
     sz, expanded_idx_sz = src.size(), src.size()
     sz = sz[:dim] + torch.Size((num,)) + sz[(dim+1):]

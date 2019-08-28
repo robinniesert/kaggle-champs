@@ -1,42 +1,43 @@
 import torch
 from fastai.basic_train import Learner, LearnerCallback, Callback, add_metrics
-from fastai.basic_data import DatasetType
-from fastai.callbacks.general_sched import TrainingPhase, GeneralScheduler
 from fastai.callback import annealing_cos
+from fastai.callbacks import SaveModelCallback
+from fastai.callbacks.general_sched import TrainingPhase, GeneralScheduler
 from losses_and_metrics import group_mean_log_mae, reshape_targs
 import constants as C
 
 class GradientClipping(LearnerCallback):
-    "Gradient clipping during training."
-    def __init__(self, learn:Learner, clip:float = 0., 
-                 start_it:int = 100):
+    "Gradient clipping during training after 'start_it' number of steps."
+    def __init__(self, learn:Learner, clip:float = 0., start_it:int = 100):
         super().__init__(learn)
         self.clip, self.start_it = clip, start_it
 
     def on_backward_end(self, iteration, **kwargs):
         "Clip the gradient before the optimizer step."
-        if self.clip and (iteration > self.start_it): 
+        if self.clip and (iteration > self.start_it):
             torch.nn.utils.clip_grad_norm_(
                 self.learn.model.parameters(), self.clip)
 
 
 class GroupMeanLogMAE(Callback):
+    """Callback to repeort the group mean log MAE during taining. Also supports
+    correct computation of the metric during snapshot ensembling."""
     _order = -20 # Needs to run before the recorder
 
-    def __init__(self, learn, snapshot_ensemble=False, **kwargs): 
+    def __init__(self, learn, snapshot_ensemble=False, **kwargs):
         self.learn = learn
         self.snapshot_ensemble = snapshot_ensemble
 
-    def on_train_begin(self, **kwargs): 
+    def on_train_begin(self, **kwargs):
         metric_names = ['group_mean_log_mae']
         if self.snapshot_ensemble: metric_names += ['group_mean_log_mae_es']
         self.learn.recorder.add_metric_names(metric_names)
         if self.snapshot_ensemble: self.val_preds = []
-        
-    def on_epoch_begin(self, **kwargs): 
+
+    def on_epoch_begin(self, **kwargs):
         self.sc_types, self.output, self.target = [], [], []
-    
-    def on_batch_end(self, last_target, last_output, last_input, train, 
+
+    def on_batch_end(self, last_target, last_output, last_input, train,
                      **kwargs):
         if not train:
             sc_types = last_input[-1].view(-1)
@@ -44,7 +45,7 @@ class GroupMeanLogMAE(Callback):
             self.sc_types.append(sc_types[mask])
             self.output.append(last_output[:,-1])
             self.target.append(reshape_targs(last_target)[:,-1])
-                
+
     def on_epoch_end(self, epoch, last_metrics, **kwargs):
         if (len(self.sc_types) > 0) and (len(self.output) > 0):
             sc_types = torch.cat(self.sc_types)
@@ -52,8 +53,8 @@ class GroupMeanLogMAE(Callback):
             target = torch.cat(self.target)
             metrics = [group_mean_log_mae(
                 preds, target, sc_types, C.SC_MEAN, C.SC_STD)]
-                
-            if self.snapshot_ensemble: 
+
+            if self.snapshot_ensemble:
                 self.val_preds.append(preds.view(-1,1))
                 preds_se = torch.cat(self.val_preds, dim=1).mean(dim=1)
                 metrics += [group_mean_log_mae(
@@ -62,10 +63,21 @@ class GroupMeanLogMAE(Callback):
 
 
 class WarmRestartsLRScheduler(GeneralScheduler):
-    def __init__(self, learn, n_cycles, lr, mom, cycle_len=1, cycle_mult=1):
+    """Adopted from:
+    https://docs.fast.ai/callbacks.general_sched.html#class-generalscheduler."""
+    def __init__(self, learn, n_cycles, lr, mom, cycle_len=1, cycle_mult=1,
+                 start_epoch=0):
         n = len(learn.data.train_dl)
         phases = [(TrainingPhase(n * (cycle_len * cycle_mult**i))
                  .schedule_hp('lr', lr, anneal=annealing_cos)
-                 .schedule_hp('mom', mom, anneal=annealing_cos)) 
+                 .schedule_hp('mom', mom, anneal=annealing_cos))
                  for i in range(n_cycles)]
-        super().__init__(learn, phases)
+        super().__init__(learn, phases, start_epoch)
+
+# Fastai's automatic loading was causing CUDA memory errors during snapshot
+# ensembling. The function below is a workaround.
+def save_model_cb_jump_to_epoch_adj(cb, epoch:int)->None:
+    """Overwrites standard jump_to_epoch for the SaveModelCallback."""
+    print(f'Model {cb.name}_{epoch-1} not loaded.')
+
+SaveModelCallback.jump_to_epoch = save_model_cb_jump_to_epoch_adj
