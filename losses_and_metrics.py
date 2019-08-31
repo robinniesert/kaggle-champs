@@ -20,13 +20,14 @@ def group_mean_log_mae(y_true, y_pred, types, sc_mean=0, sc_std=1):
         
 def contribs_rmse_loss(preds, targs):
     """
-    Returns the sum of RMSEs for each sc contribution and total sc value.
+    Returns the sum of RMSEs for each scalar coupling (sc) contribution and 
+    the sc constant in a batch.
     
     Args:
-        - preds: tensor of shape (batch_size * n_sc, 5) containing 
-            predictions. Last column is the total scalar coupling value.
-        - targs: tensor of shape (batch_size * n_sc, 5) containing 
-            true values. Last column is the total scalar coupling value.
+        - preds: tensor of shape (n_sc_batch, 5) containing predictions. Last 
+        column is the scalar coupling constant.
+        - targs: tensor of shape (batch_size, max_n_sc_per_molecule, 5) 
+        containing true values. Last column is the scalar coupling constant.
     """
     targs = reshape_targs(targs)
     return torch.mean((preds - targs) ** 2, dim=0).sqrt().sum()

@@ -3,8 +3,8 @@ import numpy as np
 from rdkit import Chem, RDConfig
 
 
-TYPES           = np.array(['1JHC', '2JHH', '1JHN', '2JHN', '2JHC', '3JHH', 
-                            '3JHC', '3JHN'])
+TYPES          = np.array(['1JHC', '2JHH', '1JHN', '2JHN', '2JHC', '3JHH', 
+                           '3JHC', '3JHN'])
 TYPES_MAP      = {t: i for i, t in enumerate(TYPES)}
 SYMBOLS        = ['H', 'C', 'N', 'O', 'F']
 DEGREES        = [1, 2, 3, 4, 5]
@@ -62,8 +62,8 @@ SC_MEAN             = 16
 SC_STD              = 35
 SC_FEATS_TO_SCALE   = ['dist', 'dist_min_rad', 'dist_electro_neg_adj', 
                        'num_atoms', 'num_C_atoms', 'num_F_atoms', 'num_H_atoms', 
-                       'num_N_atoms', 'num_O_atoms', 'inv_dist',  
-                       'ave_bond_length', 'std_bond_length', 'ave_atom_weight']
+                       'num_N_atoms', 'num_O_atoms', 'ave_bond_length', 
+                       'std_bond_length', 'ave_atom_weight']
 ATOM_FEATS_TO_SCALE = ['atomic_num', 'ave_bond_length', 'ave_neighbor_weight']
 BOND_FEATS_TO_SCALE = ['dist']
 

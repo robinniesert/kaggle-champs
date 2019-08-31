@@ -19,9 +19,11 @@ def get_dist_matrix(struct_df):
 
 
 class MoleculeDataset(Dataset):
+    """Dataset returning inputs and targets per molecule."""
     def __init__(self, mol_ids, gb_mol_sc, gb_mol_atom, gb_mol_bond, 
                  gb_mol_struct, gb_mol_angle_in, gb_mol_angle_out, 
                  gb_mol_graph_dist):
+        """Dataset is constructed from dataframes grouped by molecule_id."""
         self.n = len(mol_ids)
         self.mol_ids = mol_ids
         self.gb_mol_sc = gb_mol_sc
@@ -52,8 +54,36 @@ def arr_lst_to_padded_batch(arr_lst, dtype=torch.float,
     return batch.contiguous()
                    
 def collate_parallel_fn(batch, test=False):
+    """
+    Transforms input dataframes grouped by molecule into a batch of input and 
+    target tensors for a 'batch_size' number of molecules. The first dimension 
+    is used as the batch dimension.
+
+    Returns:
+        - atom_x: features at the atom level
+        - bond_x: features at the chemical bond level
+        - sc_x: features describing the scalar coupling atom_0 and atom_1 pairs
+        - sc_m_x: in addition to the set of features in 'sc_x', includes 
+            features at the molecule level.
+        - eucl_dists: 3D euclidean distance matrices
+        - graph_dists: graph distance matrices
+        - angles: cosine angles between all chemical bonds
+        - mask: binary mask of dim=(batch_size, max_n_atoms, max_n_atoms),
+            where max_n_atoms is the largest number of atoms per molecule in 
+            'batch'
+        - bond_idx: tensor of dim=(batch_size, max_n_bonds, 2), containing the
+            indices of atom_0 and atom_1 pairs that form chemical bonds
+        - sc_idx: tensor of dim=(batch_size, max_n_sc, 2), containing the
+            indices of atom_0 and atom_1 pairs that form a scalar coupling
+            pair
+        - angles_idx: tensor of dim=(batch_size, max_n_angles, 1), mapping 
+            angles to the chemical bonds in the molecule.
+        - sc_types: scalar coupling types
+        - sc_vals: scalar coupling contributions (first 4 columns) and constant
+            (last column)
+    """
     batch_size, n_atom_sum, n_pairs_sum = len(batch), 0, 0
-    x, bond_x, sc_x, sc_m_x = [], [], [], []
+    atom_x, bond_x, sc_x, sc_m_x = [], [], [], []
     eucl_dists, graph_dists = [], []
     angles_in, angles_out = [], []
     mask, bond_idx, sc_idx = [], [], []
@@ -69,7 +99,7 @@ def collate_parallel_fn(batch, test=False):
         eucl_dists_ = np.pad(eucl_dists_, [(0, 0), (0, n_pad)], 'constant', 
                              constant_values=999)
         
-        x.append(atom_df[C.ATOM_FEATS].values)
+        atom_x.append(atom_df[C.ATOM_FEATS].values)
         bond_x.append(bond_df[C.BOND_FEATS].values)
         sc_x.append(sc_df[C.SC_EDGE_FEATS].values)
         sc_m_x.append(sc_df[C.SC_MOL_FEATS].values)
@@ -100,9 +130,9 @@ def collate_parallel_fn(batch, test=False):
         n_atom_sum += n_atoms
         n_pairs_sum += n_pairs
         
-    x = arr_lst_to_padded_batch(x, pad_val=0.)
+    atom_x = arr_lst_to_padded_batch(atom_x, pad_val=0.)
     bond_x = arr_lst_to_padded_batch(bond_x)
-    max_n_atoms = x.size(1)
+    max_n_atoms = atom_x.size(1)
     max_n_bonds = bond_x.size(1)
     angles_out_idx = [a + max_n_bonds for a in angles_out_idx]
     
@@ -126,5 +156,5 @@ def collate_parallel_fn(batch, test=False):
     angles_out = arr_lst_to_padded_batch(angles_out)
     angles = torch.cat((angles_in, angles_out), dim=-1).contiguous()
     
-    return (x, bond_x, sc_x, sc_m_x, eucl_dists, graph_dists,  angles, mask, 
+    return (atom_x, bond_x, sc_x, sc_m_x, eucl_dists, graph_dists, angles, mask, 
             bond_idx, sc_idx, angles_idx, sc_types), sc_vals

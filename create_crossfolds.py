@@ -1,9 +1,10 @@
+## 
+# Script creates cross folds based on the molecule ids in the train set
 
 import pandas as pd
-import numpy as np
 from sklearn.model_selection import KFold
-
 import constants as C
+
 
 train_df = pd.read_csv(C.PROC_DATA_PATH + 'train_proc_df.csv', index_col=0)
 mol_ids = train_df['molecule_id'].unique()

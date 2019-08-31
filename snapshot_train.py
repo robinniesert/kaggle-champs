@@ -94,8 +94,6 @@ gb_mol_graph_dist = graph_dist_df.groupby('molecule_id')
 
 # create dataloaders and fastai DataBunch
 set_seed(100)
-batch_size = args.batch_size
-
 train_ds = MoleculeDataset(
     train_mol_ids, gb_mol_sc, gb_mol_atom, gb_mol_bond, gb_mol_struct,
     gb_mol_angle_in, gb_mol_angle_out, gb_mol_graph_dist
@@ -109,10 +107,10 @@ test_ds  = MoleculeDataset(
     gb_mol_angle_in, gb_mol_angle_out, gb_mol_graph_dist
 )
 
-train_dl = DataLoader(train_ds, batch_size, shuffle=True, num_workers=8)
-val_dl   = DataLoader(val_ds, batch_size, num_workers=8)
+train_dl = DataLoader(train_ds, args.batch_size, shuffle=True, num_workers=8)
+val_dl   = DataLoader(val_ds, args.batch_size, num_workers=8)
 test_dl  = DeviceDataLoader.create(
-    test_ds, batch_size, num_workers=8,
+    test_ds, args.batch_size, num_workers=8,
     collate_fn=partial(collate_parallel_fn, test=True)
 )
 
@@ -122,7 +120,7 @@ db.test_dl = test_dl
 
 # set up model
 set_seed(100)
-wd, d_model = args.wd, args.d_model
+d_model = args.d_model
 enn_args = dict(layers=3*[d_model], dropout=3*[0.0], layer_norm=True)
 ann_args = dict(layers=1*[d_model], dropout=1*[0.0], layer_norm=True,
                 out_act=nn.Tanh())
@@ -152,7 +150,7 @@ callback_fns = [
             start_epoch=args.start_epoch)
 ]
 learn = Learner(db, model, metrics=[rmse, mae], callback_fns=callback_fns,
-                wd=wd, loss_func=contribs_rmse_loss)
+                wd=args.wd, loss_func=contribs_rmse_loss)
 if args.start_epoch > 0: learn.load(model_se_str+f'_{args.start_epoch-1}')
 else: learn.load(model_str)
 torch.cuda.empty_cache()

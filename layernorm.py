@@ -2,7 +2,7 @@ import torch.nn as nn
 
 # The below layernorm class initializes parameters according to the default 
 # initialization of bacthnorm layers in pytorch v1.1 and below. Somehow this 
-# initialization seemed to work significantly beter.
+# initialization seemed to work beter.
 class LayerNorm(nn.LayerNorm):
     """Class overriding pytorch default layernorm intitialization."""
     def reset_parameters(self):

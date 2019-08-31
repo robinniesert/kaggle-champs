@@ -60,8 +60,3 @@ def scale_features(df, features, train_mol_ids=None, means=None, stds=None,
         df[features] = (df[features] - means) / stds
     if return_mean_and_std: return df, means, stds
     else: return df
-
-
-def clones(module, N):
-    """Produce N identical layers."""
-    return torch.nn.ModuleList([copy.deepcopy(module) for _ in range(n)])
