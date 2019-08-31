@@ -1,5 +1,6 @@
 ##
 # Copied from: https://github.com/jensengroup/xyz2mol
+# 
 #
 # Written by Jan H. Jensen based on this paper Yeonjoon Kim and Woo Youn Kim
 # "Universal Structure Conversion Method for Organic Molecules: From Atomic Connectivity

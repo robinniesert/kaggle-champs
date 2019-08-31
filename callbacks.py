@@ -74,6 +74,7 @@ class WarmRestartsLRScheduler(GeneralScheduler):
                  for i in range(n_cycles)]
         super().__init__(learn, phases, start_epoch)
 
+
 # Fastai's automatic loading was causing CUDA memory errors during snapshot
 # ensembling. The function below is a workaround.
 def save_model_cb_jump_to_epoch_adj(cb, epoch:int)->None:

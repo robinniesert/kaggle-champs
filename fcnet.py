@@ -1,6 +1,7 @@
 import torch.nn as nn
 from layernorm import LayerNorm
 
+
 def hidden_layer(d_in, d_out, batch_norm, dropout, layer_norm=False, act=None):
     layers = []
     layers.append(nn.Linear(d_in, d_out))
